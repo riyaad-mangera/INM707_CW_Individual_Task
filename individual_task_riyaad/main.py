@@ -9,6 +9,10 @@ import matplotlib.pyplot as plt
 import torch
 import pickle
 import os
+import numpy as np
+from ray.rllib.env.wrappers.atari_wrappers import wrap_deepmind
+import warnings
+warnings.filterwarnings("ignore")
 
 from logger import Logger
 
@@ -43,7 +47,7 @@ def load_algo(algo_dir):
 
 # config = (
 #     ppo.PPOConfig()
-#     .environment("BreakoutNoFrameskip-v4", render_env=True)
+#     .environment("BreakoutNoFrameskip-v4")
 #     .env_runners(num_env_runners=2)
 #     .framework("torch")
 #     .training(model={"fcnet_hiddens": [64, 64], "dim": 84})
@@ -51,24 +55,108 @@ def load_algo(algo_dir):
 #     .resources(num_cpus_per_worker=1, num_gpus_per_worker=0.1)
 # )
 
-# config = ppo.PPOConfig().environment("BreakoutNoFrameskip-v4", render_env=True, is_atari=True).env_runners(num_env_runners=2).framework("torch").training(model={"fcnet_hiddens": [64, 64]}).evaluation(evaluation_num_env_runners=1).resources(num_cpus_per_worker=1, num_gpus_per_worker=0.1)
+# config = (ppo.PPOConfig()
+#           .environment("BreakoutNoFrameskip-v4")
+#           .training(model={"fcnet_hiddens": [3], 
+#                            "conv_filters": [[16, [4, 4], 2], [32, [4, 4], 2], [64, [4, 4], 2], [128, [11, 11], 1]], 
+#                            "framestack": True, 
+#                            "dim": 84, 
+#                            "grayscale": False,
+#                            })
+#             .env_runners(num_env_runners=2)
+#             .framework("torch")
+#             .resources(num_cpus_per_worker=1, num_gpus_per_worker=0.1)
+#             .evaluation(evaluation_num_env_runners=1)
+#           )
 
-wandb_logger = Logger(f"inm707_breakout_test_100_steps", project='INM705_CW')
+# config = ppo.PPOConfig().environment("BreakoutNoFrameskip-v4").training(model={"fcnet_hiddens": [3], 
+#                                                                                "conv_filters": [[16, [4, 4], 2], [32, [4, 4], 2], [64, [4, 4], 2], [128, [11, 11], 1]], 
+#                                                                                "framestack": True, 
+#                                                                                "dim": 84, 
+#                                                                                "grayscale": False,
+#                                                                                }).env_runners(num_env_runners=2).framework("torch").resources(num_cpus_per_worker=1, num_gpus_per_worker=0.1).evaluation(evaluation_num_env_runners=1)
+        #  .lambda(0.95)
+        # .kl_coeff(0.5)
+        # .clip_rewards(True)
+        # .clip_param(0.1)
+        # .vf_clip_param(10.0)
+        # .entropy_coeff(0.01)
+        # .train_batch_size(5000)
+        # .rollout_fragment_length(100)
+        # .sgd_minibatch_size(500)
+        # .num_sgd_iter(10)
+
+wandb_logger = Logger(f"inm707_breakout_test", project='INM707_CW')
 logger = wandb_logger.get_logger()
 
-config = ppo.PPOConfig().environment("BreakoutNoFrameskip-v4").training(model={"fcnet_hiddens": [3], 
-                                                                               "conv_filters": [[16, [4, 4], 2], [32, [4, 4], 2], [512, [11, 11], 1]], 
-                                                                               "framestack": True, 
-                                                                               "dim": 42, 
-                                                                               "grayscale": False
-                                                                               }).env_runners(num_env_runners=2).framework("torch").resources(num_cpus_per_worker=1, num_gpus_per_worker=0.1).evaluation(evaluation_num_env_runners=1)
+config = ppo.PPOConfig()
+config.environment("BreakoutNoFrameskip-v4", 
+                   env_config={"frameskip": 1,
+                               "full_action_space": False,
+                               "repeat_action_probability": 0.0,
+                               }, clip_rewards=True,)
+
+config.training(model={"fcnet_hiddens": [256], 
+                       "conv_filters": [[16, [4, 4], 2], [32, [4, 4], 2], [64, [4, 4], 2], [128, [11, 11], 1]], #[[64, [5, 5], 2], [128, [5, 5], 2], [128, [5, 5], 2], [256, [5, 5], 2], [256, [6, 6], 1]], #[[16, [4, 4], 2], [32, [4, 4], 2], [64, [4, 4], 2], [128, [11, 11], 1]], 
+                       "framestack": True, 
+                       "dim": 84, 
+                       "grayscale": False,
+                       })
+# config.training(
+#         model={
+#             "vf_share_layers": True,
+#             "conv_filters": [[16, 4, 2], [32, 4, 2], [64, 4, 2], [128, 4, 2]],
+#             "framestack": True,
+#             "conv_activation": "relu",
+#             "post_fcnet_hiddens": [256],
+#         })
+config.env_runners(num_env_runners=2)
+config.framework("torch")
+config.resources(num_cpus_per_worker=1, num_gpus_per_worker=0.1)
+config.evaluation(evaluation_num_env_runners=1)
+
+config.lambda_ = 0.95
+config.kl_coeff = 0.5
+config.clip_rewards = True
+config.clip_param = 0.1
+config.vf_clip_param = 10.0
+config.entropy_coeff = 0.01
+config.train_batch_size = 5000
+config.rollout_fragment_length = 100
+config.sgd_minibatch_size = 500
+config.num_sgd_iter = 10
+# config.env_config = {"frameskip": 1, "full_action_space": False, "repeat_action_probability": 0.0}
 
 algo = config.build()
 
-for _ in range(100):
+print('Loading checkpoint')
+with open('./checkpoints/fifth_test/ppo_test_weights_step_1.pkl', 'rb') as file:
+    weights = pickle.load(file)
+    algo.get_policy().set_weights(weights)
 
-    print(f'\n\tStep: {_}\n')
-    print(algo.train())  # 3. train it,
+print('Checkpoint loaded')
+
+for step in range(1000): #range(50, 100):
+
+    print(f'\n\tStep: {step}\n')
+    result = algo.train()
+
+    print(result)
+
+    # if step % 10 == 0:
+    print('Saving weights...')
+    with open(f'checkpoints/ppo_test_weights_step_{step}.pkl', 'wb') as file:
+        pickle.dump(algo.get_policy().get_weights(), file)
+
+print('Saving weights...')
+with open(f'checkpoints/ppo_test_weights_final.pkl', 'wb') as file:
+    pickle.dump(algo.get_policy().get_weights(), file)
+
+####################################################################################################
+
+# print('Saving weights...')
+# with open(f'checkpoints/ppo_test_weights_final.pkl', 'wb') as file:
+#     pickle.dump(algo.get_policy().get_weights(), file)
 
 # algo.train()
 # save_result = algo.save("./checkpoints")
@@ -77,10 +165,6 @@ for _ in range(100):
 # print('Saving agent...')
 # with open(f'checkpoints/ppo_test_2.pkl', 'wb') as file:
 #     pickle.dump(algo, file)
-
-print('Saving weights...')
-with open(f'checkpoints/ppo_test_weights.pkl', 'wb') as file:
-    pickle.dump(algo.get_policy().get_weights(), file)
 
 # algo.evaluate()  # 4. and evaluate it.
 
@@ -101,34 +185,50 @@ with open(f'checkpoints/ppo_test_weights.pkl', 'wb') as file:
 
 # my_restored_policy = Policy.from_checkpoint("./checkpoints/policies/default_policy/policy_state.pkl", policy_ids=['default_policy'])
 
-# algo = config.build()
+########################################## RUN BELOW ####################################################
+
+algo = config.build()
+# print(algo.get_policy().get_initial_state())
+# print(f'\n\n{config["model"]}\n\n')
 
 # print('Loading checkpoint')
-# with open('./checkpoints/ppo_test_weights.pkl', 'rb') as file:
+# with open('./checkpoints/ppo_test_weights_step_1.pkl', 'rb') as file:
 #     weights = pickle.load(file)
 #     algo.get_policy().set_weights(weights)
 
-# num_episodes = 0
-# episode_reward = 0.0
+# print('Checkpoint loaded')
 
-# algo.evaluate()
+env = gym.make("BreakoutNoFrameskip-v4", render_mode="human")
+# env = wrap_deepmind(env)
+obs, info = env.reset()
 
-# while num_episodes < 10:
-#     # Compute an action (`a`).
-#     a = algo.compute_single_action(
-#         observation=obs,
-#         explore="store_true",
-#         policy_id="default_policy",  # <- default value
-#     )
-#     # Send the computed action `a` to the env.
-#     obs, reward, done, truncated, _ = env.step(a)
-#     episode_reward += reward
-#     # Is the episode `done`? -> Reset.
-#     if done:
-#         print(f"Episode {num_episodes} done: Total reward = {episode_reward}")
-#         obs, info = env.reset()
-#         num_episodes += 1
-#         episode_reward = 0.0
+num_episodes = 0
+episode_reward = 0.0
+
+algo.evaluate()
+
+state = init_state = [np.zeros(84, np.float32)]
+
+while num_episodes < 10:
+    # Compute an action (`a`).
+    a, state, _ = algo.compute_single_action(
+        observation=obs,
+        state=state,
+        # explore=False, #"store_true",
+        policy_id="default_policy",  # <- default value
+        
+    )
+    # Send the computed action `a` to the env.
+    print(a)
+    obs, reward, done, truncated, _ = env.step(a)
+    episode_reward += reward
+    # Is the episode `done`? -> Reset.
+    if done:
+        print(f"Episode {num_episodes} done: Total reward = {episode_reward}")
+        obs, info = env.reset()
+        num_episodes += 1
+        episode_reward = 0.0
+        state = init_state
 
 algo.stop()
 
